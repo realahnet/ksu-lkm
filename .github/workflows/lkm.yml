@@ -2,17 +2,79 @@ name: KernelSU / KernelSU-Next LKM CI
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+env:
+  GH_TOKEN: ${{ secrets.GH_TOKEN }}
+  GH_USERNAME: cyberknight777
+  KSUPATCHER_REPO: akuatech/ksupatcher
 
 jobs:
+  check-upstream-releases:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.compare.outputs.should_run }}
+      latest_ksu: ${{ steps.latest.outputs.latest_ksu }}
+      latest_ksun: ${{ steps.latest.outputs.latest_ksun }}
+
+    steps:
+      - name: Fetch latest upstream releases
+        id: latest
+        run: |
+          set -euo pipefail
+
+          latestksu=$(curl -fsSL https://api.github.com/repos/Tiann/KernelSU/releases/latest | jq -r .tag_name)
+          latestksun=$(curl -fsSL https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest | jq -r .tag_name)
+
+          echo "latest_ksu=${latestksu}" >> "$GITHUB_OUTPUT"
+          echo "latest_ksun=${latestksun}" >> "$GITHUB_OUTPUT"
+
+      - name: Compare against current KSUD binaries
+        id: compare
+        env:
+          LATEST_KSU: ${{ steps.latest.outputs.latest_ksu }}
+          LATEST_KSUN: ${{ steps.latest.outputs.latest_ksun }}
+        run: |
+          set -euo pipefail
+
+          git clone --depth=1 "https://${GH_USERNAME}:${GH_TOKEN}@github.com/${KSUPATCHER_REPO}.git" ksupatcher
+          mkdir -p latest
+
+          wget -q "https://github.com/Tiann/KernelSU/releases/download/${LATEST_KSU}/ksud-aarch64-linux-android" -O latest/libksud.so
+          wget -q "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${LATEST_KSUN}/ksud-aarch64-linux-android" -O latest/libksud_next.so
+
+          current_ksu="ksupatcher/app/src/main/jniLibs/arm64-v8a/libksud.so"
+          current_ksun="ksupatcher/app/src/main/jniLibs/arm64-v8a/libksud_next.so"
+
+          echo "Latest KernelSU release: ${LATEST_KSU}"
+          echo "Latest KernelSU-Next release: ${LATEST_KSUN}"
+
+          if [ ! -f "${current_ksu}" ] || [ ! -f "${current_ksun}" ]; then
+            echo "Current KSUD binaries are missing in ${KSUPATCHER_REPO}"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          elif ! cmp -s latest/libksud.so "${current_ksu}" || ! cmp -s latest/libksud_next.so "${current_ksun}"; then
+            echo "Detected upstream KSUD binary change"
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Current KSUD binaries already match upstream releases"
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+          fi
+
   lkm-builder:
+    needs: check-upstream-releases
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check-upstream-releases.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     container:
       image: fedora:latest
+    env:
+      LATEST_KSU: ${{ needs.check-upstream-releases.outputs.latest_ksu }}
+      LATEST_KSUN: ${{ needs.check-upstream-releases.outputs.latest_ksun }}
 
     steps:
       - name: Environment Initialization
         run: |
-          sudo dnf install gcc clang lld repo bc flex openssl-devel openssl-devel-engine wget tar zstd bsdtar file rsync zip bison cmp which -y
+          sudo dnf install gcc clang lld repo bc flex openssl-devel openssl-devel-engine wget tar zstd bsdtar file rsync zip bison cmp which git jq -y
       - name: Clone Kernel
         run: |
           git clone --depth=1 https://github.com/cyberknight777/dragonheart_kernel_motorola_cancunf.git kernel
@@ -47,3 +109,28 @@ jobs:
           name: "KernelSU / KernelSU-Next LKM for Motorola G54 5G"
           tag: "ksu_lkm-${{ env.DATE }}"
           token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push KSUD
+        run: |
+          set -euo pipefail
+
+          git config --global user.name "Cyber Knight"
+          git config --global user.email "cyberknight755@gmail.com"
+
+          git clone "https://${GH_USERNAME}:${GH_TOKEN}@github.com/${KSUPATCHER_REPO}.git" ksupatcher
+          cd ksupatcher
+
+          mkdir -p app/src/main/jniLibs/arm64-v8a
+          wget -q "https://github.com/Tiann/KernelSU/releases/download/${LATEST_KSU}/ksud-aarch64-linux-android" -O app/src/main/jniLibs/arm64-v8a/libksud.so
+          wget -q "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${LATEST_KSUN}/ksud-aarch64-linux-android" -O app/src/main/jniLibs/arm64-v8a/libksud_next.so
+          chmod 0644 app/src/main/jniLibs/arm64-v8a/libksud.so app/src/main/jniLibs/arm64-v8a/libksud_next.so
+
+          if git diff --quiet -- app/src/main/jniLibs/arm64-v8a; then
+            echo "No KSUD updates detected"
+            exit 0
+          fi
+
+          git add app/src/main/jniLibs/arm64-v8a
+          git commit -m "ksupatcher: Update KSUD assets" \
+            -m "KernelSU: ${LATEST_KSU}" \
+            -m "KernelSU-Next: ${LATEST_KSUN}"
+          git push origin HEAD
