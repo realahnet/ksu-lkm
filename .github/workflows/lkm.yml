@@ -17,6 +17,10 @@ jobs:
       should_run: ${{ steps.compare.outputs.should_run }}
       latest_ksu: ${{ steps.latest.outputs.latest_ksu }}
       latest_ksun: ${{ steps.latest.outputs.latest_ksun }}
+      latest_ksu_ksud_url: ${{ steps.latest.outputs.latest_ksu_ksud_url }}
+      latest_ksu_apk_url: ${{ steps.latest.outputs.latest_ksu_apk_url }}
+      latest_ksun_ksud_url: ${{ steps.latest.outputs.latest_ksun_ksud_url }}
+      latest_ksun_apk_url: ${{ steps.latest.outputs.latest_ksun_apk_url }}
 
     steps:
       - name: Fetch latest upstream releases
@@ -24,25 +28,64 @@ jobs:
         run: |
           set -euo pipefail
 
-          latestksu=$(curl -fsSL https://api.github.com/repos/Tiann/KernelSU/releases/latest | jq -r .tag_name)
-          latestksun=$(curl -fsSL https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest | jq -r .tag_name)
+          latestksu_json=$(curl -fsSL https://api.github.com/repos/Tiann/KernelSU/releases/latest)
+          latestksun_json=$(curl -fsSL https://api.github.com/repos/KernelSU-Next/KernelSU-Next/releases/latest)
+
+          latestksu=$(jq -r '.tag_name' <<< "${latestksu_json}")
+          latestksun=$(jq -r '.tag_name' <<< "${latestksun_json}")
+          latestksu_ksud_url=$(jq -r '([.assets[]? | select(.name == "ksud-aarch64-linux-android") | .browser_download_url][0]) // ""' <<< "${latestksu_json}")
+          latestksu_apk_url=$(jq -r '([.assets[]? | select(.name | endswith("-release.apk")) | .browser_download_url][0]) // ""' <<< "${latestksu_json}")
+          latestksun_ksud_url=$(jq -r '([.assets[]? | select(.name == "ksud-aarch64-linux-android") | .browser_download_url][0]) // ""' <<< "${latestksun_json}")
+          latestksun_apk_url=$(jq -r '([.assets[]? | select(.name | endswith("-release.apk")) | .browser_download_url][0]) // ""' <<< "${latestksun_json}")
 
           echo "latest_ksu=${latestksu}" >> "$GITHUB_OUTPUT"
           echo "latest_ksun=${latestksun}" >> "$GITHUB_OUTPUT"
+          echo "latest_ksu_ksud_url=${latestksu_ksud_url}" >> "$GITHUB_OUTPUT"
+          echo "latest_ksu_apk_url=${latestksu_apk_url}" >> "$GITHUB_OUTPUT"
+          echo "latest_ksun_ksud_url=${latestksun_ksud_url}" >> "$GITHUB_OUTPUT"
+          echo "latest_ksun_apk_url=${latestksun_apk_url}" >> "$GITHUB_OUTPUT"
 
       - name: Compare against current KSUD binaries
         id: compare
         env:
           LATEST_KSU: ${{ steps.latest.outputs.latest_ksu }}
           LATEST_KSUN: ${{ steps.latest.outputs.latest_ksun }}
+          LATEST_KSU_KSUD_URL: ${{ steps.latest.outputs.latest_ksu_ksud_url }}
+          LATEST_KSU_APK_URL: ${{ steps.latest.outputs.latest_ksu_apk_url }}
+          LATEST_KSUN_KSUD_URL: ${{ steps.latest.outputs.latest_ksun_ksud_url }}
+          LATEST_KSUN_APK_URL: ${{ steps.latest.outputs.latest_ksun_apk_url }}
         run: |
           set -euo pipefail
 
-          git clone --depth=1 "https://${GH_USERNAME}:${GH_TOKEN}@github.com/${KSUPATCHER_REPO}.git" ksupatcher
+          download_ksud() {
+            local direct_url="$1"
+            local apk_url="$2"
+            local output="$3"
+            local tmpdir
+
+            if [ -n "${direct_url}" ]; then
+              echo "Downloading KSUD from ${direct_url}"
+              curl -fL --retry 3 --retry-delay 2 "${direct_url}" -o "${output}"
+              return 0
+            fi
+
+            if [ -z "${apk_url}" ]; then
+              echo "No downloadable KSUD source was published for ${output}"
+              return 1
+            fi
+
+            tmpdir=$(mktemp -d)
+            echo "Standalone KSUD asset missing, extracting libksud.so from ${apk_url}"
+            curl -fL --retry 3 --retry-delay 2 "${apk_url}" -o "${tmpdir}/release.apk"
+            unzip -p "${tmpdir}/release.apk" lib/arm64-v8a/libksud.so > "${output}"
+            rm -rf "${tmpdir}"
+          }
+
+          git clone --depth=1 "https://github.com/${KSUPATCHER_REPO}.git" ksupatcher
           mkdir -p latest
 
-          wget -q "https://github.com/Tiann/KernelSU/releases/download/${LATEST_KSU}/ksud-aarch64-linux-android" -O latest/libksud.so
-          wget -q "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${LATEST_KSUN}/ksud-aarch64-linux-android" -O latest/libksud_next.so
+          download_ksud "${LATEST_KSU_KSUD_URL}" "${LATEST_KSU_APK_URL}" latest/libksud.so
+          download_ksud "${LATEST_KSUN_KSUD_URL}" "${LATEST_KSUN_APK_URL}" latest/libksud_next.so
 
           current_ksu="ksupatcher/app/src/main/jniLibs/arm64-v8a/libksud.so"
           current_ksun="ksupatcher/app/src/main/jniLibs/arm64-v8a/libksud_next.so"
@@ -70,6 +113,10 @@ jobs:
     env:
       LATEST_KSU: ${{ needs.check-upstream-releases.outputs.latest_ksu }}
       LATEST_KSUN: ${{ needs.check-upstream-releases.outputs.latest_ksun }}
+      LATEST_KSU_KSUD_URL: ${{ needs.check-upstream-releases.outputs.latest_ksu_ksud_url }}
+      LATEST_KSU_APK_URL: ${{ needs.check-upstream-releases.outputs.latest_ksu_apk_url }}
+      LATEST_KSUN_KSUD_URL: ${{ needs.check-upstream-releases.outputs.latest_ksun_ksud_url }}
+      LATEST_KSUN_APK_URL: ${{ needs.check-upstream-releases.outputs.latest_ksun_apk_url }}
 
     steps:
       - name: Environment Initialization
@@ -113,6 +160,32 @@ jobs:
         run: |
           set -euo pipefail
 
+          download_ksud() {
+            local direct_url="$1"
+            local apk_url="$2"
+            local output="$3"
+            local tmpdir
+
+            if [ -n "${direct_url}" ]; then
+              echo "Downloading KSUD from ${direct_url}"
+              curl -fL --retry 3 --retry-delay 2 "${direct_url}" -o "${output}"
+              chmod 0644 "${output}"
+              return 0
+            fi
+
+            if [ -z "${apk_url}" ]; then
+              echo "No downloadable KSUD source was published for ${output}"
+              return 1
+            fi
+
+            tmpdir=$(mktemp -d)
+            echo "Standalone KSUD asset missing, extracting libksud.so from ${apk_url}"
+            curl -fL --retry 3 --retry-delay 2 "${apk_url}" -o "${tmpdir}/release.apk"
+            unzip -p "${tmpdir}/release.apk" lib/arm64-v8a/libksud.so > "${output}"
+            chmod 0644 "${output}"
+            rm -rf "${tmpdir}"
+          }
+
           git config --global user.name "Cyber Knight"
           git config --global user.email "cyberknight755@gmail.com"
 
@@ -120,9 +193,8 @@ jobs:
           cd ksupatcher
 
           mkdir -p app/src/main/jniLibs/arm64-v8a
-          wget -q "https://github.com/Tiann/KernelSU/releases/download/${LATEST_KSU}/ksud-aarch64-linux-android" -O app/src/main/jniLibs/arm64-v8a/libksud.so
-          wget -q "https://github.com/KernelSU-Next/KernelSU-Next/releases/download/${LATEST_KSUN}/ksud-aarch64-linux-android" -O app/src/main/jniLibs/arm64-v8a/libksud_next.so
-          chmod 0644 app/src/main/jniLibs/arm64-v8a/libksud.so app/src/main/jniLibs/arm64-v8a/libksud_next.so
+          download_ksud "${LATEST_KSU_KSUD_URL}" "${LATEST_KSU_APK_URL}" app/src/main/jniLibs/arm64-v8a/libksud.so
+          download_ksud "${LATEST_KSUN_KSUD_URL}" "${LATEST_KSUN_APK_URL}" app/src/main/jniLibs/arm64-v8a/libksud_next.so
 
           if git diff --quiet -- app/src/main/jniLibs/arm64-v8a; then
             echo "No KSUD updates detected"
