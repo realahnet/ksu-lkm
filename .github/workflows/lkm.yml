@@ -7,7 +7,7 @@ on:
 
 env:
   GH_TOKEN: ${{ secrets.GH_TOKEN }}
-  GH_USERNAME: cyberknight777
+  GH_USERNAME: realahnet
   KSUPATCHER_REPO: akuatech/ksupatcher
 
 jobs:
@@ -121,39 +121,43 @@ jobs:
     steps:
       - name: Environment Initialization
         run: |
-          sudo dnf install gcc clang lld repo bc flex openssl-devel openssl-devel-engine wget tar zstd bsdtar file rsync zip bison cmp which git jq -y
+          sudo dnf install gcc clang lld repo bc flex openssl-devel openssl-devel-engine elfutils-libelf-devel wget tar zstd bsdtar file rsync zip bison cmp which git git-lfs llvm jq -y
+          git lfs install
       - name: Clone Kernel
         run: |
-          git clone --depth=1 https://github.com/cyberknight777/dragonheart_kernel_motorola_cancunf.git kernel
+          git clone --depth=1 https://github.com/realahnet/kernel_oneplus_sm8650.git sm8650
+          git clone --depth=1 https://github.com/yaap/kernel_oneplus_sm8650-modules.git sm8650-modules
       - name: Build KSU LKM
         run: |
-          cd kernel
+          cd sm8650
           curl -L https://github.com/ast-grep/ast-grep/releases/download/0.39.6/app-x86_64-unknown-linux-gnu.zip -o /tmp/astgrep.zip && unzip -j /tmp/astgrep.zip 'ast-grep' && chmod +x ast-grep && rm /tmp/astgrep.zip
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
           ./ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
           ./ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
           sed -i '/config KSU/,/help/{s/default y/default m/}' drivers/kernelsu/Kconfig
-          bash kramel.sh --obj=security/ --obj=drivers/kernelsu/kernelsu.ko
-          ./clang/bin/llvm-objcopy --strip-debug out/drivers/kernelsu/kernelsu.ko ./kernelsu.ko
+          wget https://raw.githubusercontent.com/realahnet/Releases/refs/heads/main/files/build_ksu_sm8650.sh
+          chmod +x build_ksu_sm8650.sh
+          ./build_ksu_sm8650.sh
+          ./toolchains/clang/bin/llvm-objcopy --strip-debug out/drivers/kernelsu/kernelsu.ko ./kernelsu.ko
           rm -rf KernelSU/ drivers/kernelsu
           git restore drivers/ scripts/
       - name: Build KSUN LKM
         run: |
-          cd kernel
-          sed -i 's|/out|/out2|' kramel.sh
+          cd sm8650
+          sed -i 's|out|out2|' build_ksu_sm8650.sh
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
           ./ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
           ./ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
           sed -i '/config KSU/,/help/{s/default y/default m/}' drivers/kernelsu/Kconfig
-          bash kramel.sh --obj=security/ --obj=drivers/kernelsu/kernelsu.ko
-          ./clang/bin/llvm-objcopy --strip-debug out2/drivers/kernelsu/kernelsu.ko ./kernelsu_next.ko
+          ./build_ksu_sm8650.sh
+          toolchains/clang/bin/llvm-objcopy --strip-debug out2/drivers/kernelsu/kernelsu.ko ./kernelsu_next.ko
           echo "DATE=$(date -u '+%Y%m%d%I%M')" >> $GITHUB_ENV
           echo "DATE=$DATE"
       - name: Upload output to Github Releases
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "kernel/kernelsu.ko,kernel/kernelsu_next.ko"
-          name: "KernelSU / KernelSU-Next LKM for Motorola G54 5G"
+          artifacts: "sm8650/kernelsu.ko,sm8650/kernelsu_next.ko"
+          name: "KernelSU / KernelSU-Next LKM for OnePlus 12 / OnePlus Ace 5 / OnePlus 13R"
           tag: "ksu_lkm-${{ env.DATE }}"
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Push KSUD
@@ -186,8 +190,8 @@ jobs:
             rm -rf "${tmpdir}"
           }
 
-          git config --global user.name "Cyber Knight"
-          git config --global user.email "cyberknight755@gmail.com"
+          git config --global user.name "realahnet"
+          git config --global user.email "syedmusicrealise@gmail.com"
 
           git clone "https://${GH_USERNAME}:${GH_TOKEN}@github.com/${KSUPATCHER_REPO}.git" ksupatcher
           cd ksupatcher

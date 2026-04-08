@@ -1,9 +1,9 @@
 #+TITLE: ksu-lkm
-#+DESCRIPTION: KernelSU / KernelSU-Next LKM for Motorola G54 5G Android 16+ ROMs.
+#+DESCRIPTION: KernelSU / KernelSU-Next LKM for OnePlus sm8650 Android 16+ ROMs.
 #+LANGUAGE: en
 
 * About
 
-This repository was created to build kernelsu.ko and kernelsu_next.ko to be utilized with the Android 16 ROMs for the Motorola G54 5G as [[https://github.com/cyberknight777/dragonheart_kernel_motorola_cancunf][DragonHeart]] is no longer GKI-compliant.
+This repository was created to build kernelsu.ko and kernelsu_next.ko to be utilized with the Android 16 ROMs for OnePlus sm8650 devices as [[https://github.com/realahnet/kernel_oneplus_sm8650][YAAP's Kernel]] is no longer GKI-compliant.
 
 As such, upstream's kernelsu/kernelsu_next.ko will not work to root via the LKM method.
