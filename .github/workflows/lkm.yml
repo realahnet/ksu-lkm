@@ -109,7 +109,7 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' || needs.check-upstream-releases.outputs.should_run == 'true' }}
     runs-on: ubuntu-latest
     container:
-      image: fedora:latest
+      image: archlinux:latest
     env:
       LATEST_KSU: ${{ needs.check-upstream-releases.outputs.latest_ksu }}
       LATEST_KSUN: ${{ needs.check-upstream-releases.outputs.latest_ksun }}
@@ -121,7 +121,7 @@ jobs:
     steps:
       - name: Environment Initialization
         run: |
-          sudo dnf install gcc clang lld repo bc flex openssl-devel openssl-devel-engine elfutils-libelf-devel wget tar zstd bsdtar file rsync zip bison cmp which git git-lfs openssl cpio llvm jq -y
+          pacman -Sy --noconfirm base-devel clang lld git git-lfs bc flex bison openssl libelf cpio rsync libxml2-legacy zip unzip ast-grep wget curl llvm python3
           git lfs install
       - name: Clone Kernel
         run: |
@@ -130,10 +130,9 @@ jobs:
       - name: Build KSU LKM
         run: |
           cd sm8650
-          curl -L https://github.com/ast-grep/ast-grep/releases/download/0.39.6/app-x86_64-unknown-linux-gnu.zip -o /tmp/astgrep.zip && unzip -j /tmp/astgrep.zip 'ast-grep' && chmod +x ast-grep && rm /tmp/astgrep.zip
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -
-          ./ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
-          ./ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
+          ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
+          ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
           sed -i '/config KSU/,/help/{s/default y/default m/}' drivers/kernelsu/Kconfig
           wget https://raw.githubusercontent.com/realahnet/Releases/refs/heads/main/files/build_ksu_sm8650.sh
           chmod +x build_ksu_sm8650.sh
@@ -146,8 +145,8 @@ jobs:
           cd sm8650
           sed -i 's|out|out2|' build_ksu_sm8650.sh
           curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
-          ./ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
-          ./ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
+          ast-grep -U -p '$$$ check_exports($$$) {$$$}' -r '' scripts/mod/modpost.c
+          ast-grep -U -p 'check_exports($$$);' -r '' scripts/mod/modpost.c
           sed -i '/config KSU/,/help/{s/default y/default m/}' drivers/kernelsu/Kconfig
           ./build_ksu_sm8650.sh
           toolchains/clang/bin/llvm-objcopy --strip-debug out2/drivers/kernelsu/kernelsu.ko ./kernelsu_next.ko
